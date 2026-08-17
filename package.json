@@ -1,0 +1,24 @@
+{
+  "name": "deepseek-free-api",
+  "version": "0.1.0",
+  "description": "OpenAI-compatible API proxy for DeepSeek web. Credentials auto-fetched from the DS++ browser extension.",
+  "type": "module",
+  "main": "src/server.js",
+  "bin": {
+    "deepseek-free-api": "index.js"
+  },
+  "scripts": {
+    "start": "node index.js"
+  },
+  "license": "MIT",
+  "keywords": [
+    "deepseek",
+    "openai",
+    "api-proxy",
+    "free",
+    "no-api-key"
+  ],
+  "engines": {
+    "node": ">=20"
+  }
+}
