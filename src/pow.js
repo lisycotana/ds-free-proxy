@@ -9,7 +9,7 @@
  * The solved answer is base64-encoded as JSON and sent in the
  * `x-ds-pow-response` header.
  *
- * @module deepseek-free-api/pow
+ * @module ds-free-proxy/pow
  */
 
 import { createHash } from 'node:crypto'

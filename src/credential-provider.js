@@ -5,10 +5,10 @@
  * 1. Push from the DS++ extension (POST /credentials): the extension actively
  *    pushes credentials every few minutes and on login state change. This is
  *    the primary path — zero manual config, auto-refreshing.
- * 2. File fallback (~/.deepseek-free-api/credentials.json): for headless or
+ * 2. File fallback (~/.ds-free-proxy/credentials.json): for headless or
  *    manual setups where the extension push is not available.
  *
- * @module deepseek-free-api/credential-provider
+ * @module ds-free-proxy/credential-provider
  */
 
 import { readFileSync, existsSync } from 'node:fs'
@@ -37,7 +37,7 @@ export function pushCredentials(creds) {
  * @returns {{cookie:string,bearer:string,userAgent:string}|null}
  */
 function getFromFile() {
-  const credPath = join(homedir(), '.deepseek-free-api', 'credentials.json')
+  const credPath = join(homedir(), '.ds-free-proxy', 'credentials.json')
   if (!existsSync(credPath)) return null
   try {
     const data = JSON.parse(readFileSync(credPath, 'utf8'))

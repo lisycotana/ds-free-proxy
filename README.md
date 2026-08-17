@@ -1,8 +1,10 @@
-# deepseek-free-api
+# ds-free-proxy
 
 An OpenAI-compatible API proxy that lets you use **DeepSeek web (chat.deepseek.com)** as a model backend — for free, no API key. Works with Cursor, Cline, Continue, Open WebUI, or any client that speaks OpenAI.
 
 Credentials are **auto-pushed from the DS++ browser extension** — no manual cookie scraping, no Playwright, no token files. As long as you're logged into chat.deepseek.com, this proxy has valid credentials.
+
+> **⚠️ Educational/Research Use Only.** This tool reverse-proxies chat.deepseek.com's internal API. DeepSeek may detect automated usage. See [Risk Disclaimer](#risk-disclaimer) below.
 
 ## Models
 
@@ -23,17 +25,16 @@ DS web is fully free — no membership, no API key. Both V4-Flash and V4-Pro are
 Cursor / Cline / any OpenAI client
     │  POST /v1/chat/completions  (standard OpenAI format)
     ▼
-deepseek-free-api  (this server, localhost:3000)
+ds-free-proxy  (this server, localhost:3000)
     │  1. Use cached credentials (pushed by DS++ extension)
     │  2. Create a DS chat session
     │  3. Solve PoW challenge (SHA256 / DeepSeekHashV1 WASM)
     │  4. Submit completion to chat.deepseek.com
     │  5. Convert DS SSE stream → OpenAI SSE stream
+    │  (max 2 concurrent requests — DS's per-account limit)
     ▼
 chat.deepseek.com  (your free web quota)
 ```
-
-Credentials are pushed by the DS++ browser extension to `POST /credentials` every 5 minutes. The proxy caches them and auto-refreshes on 401.
 
 ## Full deployment guide
 
@@ -61,28 +62,25 @@ Load in browser:
 4. If you have the store version of DeepSeek++, **disable it** (two copies conflict)
 5. Note the **extension ID** (a string of letters on the extension card)
 
-### Step 2: Install deepseek-free-api
+### Step 2: Install ds-free-proxy
 
 ```sh
-git clone https://github.com/lisycotana/deepseek-free-api.git
-cd deepseek-free-api
+git clone https://github.com/lisycotana/ds-free-proxy.git
+cd ds-free-proxy
 ```
 
 No `npm install` needed — zero dependencies.
 
 ### Step 3: Configure dsh MCP server (for the extension)
 
-The DS++ extension needs to connect to a local MCP server (dsh) to push credentials. Install dsh and the MCP server plugin:
+The DS++ extension connects to a local MCP server (dsh) for tool access and credential relay.
 
 ```sh
-# Install dsh
 npm install -g @deepseek-ai/dsh
-
-# Add the MCP server plugin to your web profile
 dsh plugin --profile web add /path/to/dsh-mcp-server
 ```
 
-Configure the MCP server in `~/.dsh/profiles/web/cordis.patch.yml`:
+Configure `~/.dsh/profiles/web/cordis.patch.yml`:
 ```yaml
 - id: mcp-server
   config:
@@ -107,18 +105,18 @@ dsh web
    - URL: `http://127.0.0.1:3080/mcp`
    - Secret: `bearer`, value = the token from Step 3
    - Request timeout: ≥ 60000 ms
-5. Click **Test** or **Refresh tools** — status should show `ready` with 29+ tools
+5. Click **Test** or **Refresh tools** — status should show `ready`
 
-### Step 5: Start the API proxy
+### Step 5: Start the proxy
 
 ```sh
-cd deepseek-free-api
+cd ds-free-proxy
 PORT=3000 node index.js
 ```
 
-You should see:
+Output:
 ```
-deepseek-free-api listening on http://127.0.0.1:3000
+ds-free-proxy listening on http://127.0.0.1:3000
   POST /v1/chat/completions   (OpenAI compatible)
   POST /credentials            (DS++ extension push)
   GET  /v1/models
@@ -126,9 +124,7 @@ deepseek-free-api listening on http://127.0.0.1:3000
 
 ### Step 6: Wait for credential push
 
-The DS++ extension pushes credentials to the proxy automatically:
-- On extension startup (5 seconds after SW wake)
-- Every 5 minutes after that
+The DS++ extension pushes credentials automatically (5 seconds after startup, then every 5 minutes).
 
 To push immediately, run this in the DS++ sidebar DevTools console (right-click sidebar → Inspect → Console):
 ```javascript
@@ -145,18 +141,12 @@ chrome.runtime.sendMessage({type: 'GET_DS_CREDENTIALS'}, (r) => {
 })
 ```
 
-If you see `pushed!`, credentials are ready.
-
-### Step 7: Use it in your client
+### Step 7: Use it
 
 **Cursor:**
-- Settings → Models → OpenAI API Key → set Base URL to `http://127.0.0.1:3000/v1`
-- API Key: any value (auth is disabled by default)
+- Settings → Models → Base URL: `http://127.0.0.1:3000/v1`
+- API Key: any value (or set `AUTH_TOKEN`)
 - Model: `deepseek-v4-flash` or `deepseek-v4-pro`
-
-**Cline / Continue / Open WebUI:**
-- Base URL: `http://127.0.0.1:3000/v1`
-- Model: `deepseek-v4-pro` (for reasoning) or `deepseek-v4-flash` (for speed)
 
 **curl test:**
 ```sh
@@ -165,22 +155,23 @@ curl http://127.0.0.1:3000/v1/chat/completions \
   -d '{"model":"deepseek-v4-flash","messages":[{"role":"user","content":"Hello!"}]}'
 ```
 
-### Step 8: (Optional) Secure the proxy
+### Step 8: (Recommended) Secure the proxy
 
-Set environment variables before starting:
 ```sh
-export AUTH_TOKEN=my-secret-key    # require this from API clients
-export PUSH_TOKEN=my-push-key      # require this for credential pushes
+export AUTH_TOKEN=my-secret    # require this from API clients
+export PUSH_TOKEN=my-push      # require this for credential pushes
 PORT=3000 node index.js
 ```
 
+Without `AUTH_TOKEN`, anyone on your network can call the proxy. Always set it when not running locally.
+
 ## File fallback (no DS++ extension)
 
-If you can't run the DS++ extension (e.g. headless server), use a credentials file:
+For headless servers without a browser:
 
 ```sh
-mkdir -p ~/.deepseek-free-api
-cat > ~/.deepseek-free-api/credentials.json << 'EOF'
+mkdir -p ~/.ds-free-proxy
+cat > ~/.ds-free-proxy/credentials.json << 'EOF'
 {
   "cookie": "ds_session_id=xxx; d_id=xxx; ...",
   "bearer": "eyJhbGci...",
@@ -189,27 +180,32 @@ cat > ~/.deepseek-free-api/credentials.json << 'EOF'
 EOF
 ```
 
-To get these values: open chat.deepseek.com → F12 → Network → find any `/api/v0/` request → copy the `Cookie` and `Authorization` headers.
+Get these values: chat.deepseek.com → F12 → Network → find any `/api/v0/` request → copy `Cookie` and `Authorization` headers.
 
 ## Configuration reference
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `PORT` | `3000` | Listen port |
-| `AUTH_TOKEN` | *(unset)* | Optional: require this bearer token from API clients |
-| `PUSH_TOKEN` | *(unset)* | Optional: require this bearer token for credential pushes |
+| `AUTH_TOKEN` | *(unset)* | Require this bearer token from API clients. **Set this when not running locally.** |
+| `PUSH_TOKEN` | *(unset)* | Require this bearer token for credential pushes |
+| `MAX_CONCURRENCY` | `2` | Max concurrent DS API calls (hardcoded — DS free web limits ~2 per account) |
 
-## Troubleshooting
+## Risk Disclaimer
 
-**"No DS credentials"** — The extension hasn't pushed credentials yet. Wait 5 seconds after extension startup, or run the manual push command (Step 6).
+> **⚠️ READ THIS BEFORE USING.**
 
-**"Session create returned empty id"** — Credentials are stale. The extension will re-push within 5 minutes, or run the manual push command.
+1. **Account ban risk**: DeepSeek may detect automated API usage. Reports from similar projects indicate that high concurrency (>2 per account) or rapid repeated requests (like "test connection" buttons in clients) can trigger **temporary account bans (1 day)**. This proxy caps concurrency at 2 to mitigate this, but cannot guarantee safety.
 
-**403 from MCP** — The extension ID in dsh's `allowedOrigins` doesn't match. Check the extension ID in `chrome://extensions` and update `cordis.patch.yml`.
+2. **No official support**: This project is not affiliated with or endorsed by DeepSeek. It reverse-proxies chat.deepseek.com's internal API, which may change without notice.
 
-**MCP "tools fetch failed"** — dsh is not running or the MCP token doesn't match. Verify `dsh web` is running and the token in the sidebar matches `cordis.patch.yml`.
+3. **Credential exposure**: Your DS session cookies and bearer token are transmitted over localhost to the proxy. If `AUTH_TOKEN` is not set, anyone on your network can access the proxy and use your credentials. Always set `AUTH_TOKEN` when not running locally.
 
-**PoW timeout** — Rare. DS may be rate-limiting. Wait a minute and retry.
+4. **ToS compliance**: Using this tool may violate DeepSeek's Terms of Service. Use at your own risk.
+
+5. **Rate limits**: DS free web has per-account rate limits. This proxy does not bypass them — it respects the ~2 concurrent limit and queues excess requests.
+
+**This project is for educational and research purposes only. The authors are not responsible for any consequences of using this tool, including account suspension, data loss, or legal issues.**
 
 ## Acknowledgements
 
@@ -219,23 +215,23 @@ This project builds on:
 
 Credit for the reverse-engineering of DS web API endpoints, PoW algorithms, and SSE format belongs to the freeseek author.
 
-## Differences from freeseek
+## Differences from freeseek and similar projects
 
-| | freeseek | deepseek-free-api |
+| | freeseek / Fly143 / NIyueeE | ds-free-proxy |
 | --- | --- | --- |
-| Credentials | Manual scrape / Playwright capture | Auto from DS++ extension (push) |
-| Token expiry | Manual re-scrape | Auto-refresh (push every 5min) |
+| Credentials | Manual scrape / Playwright / password | Auto from DS++ extension (push) |
+| Token expiry | Manual re-scrape / password re-login | Auto-refresh (push every 5min) |
 | Linux without desktop | Can't auto-capture | Works (browser is anywhere) |
-| Dependencies | Electron, playwright-core | Zero (pure Node.js >=20) |
-| PoW | Built-in | Built-in (adapted from freeseek) |
+| Dependencies | Python/Electron/Rust + various deps | Zero (pure Node.js >=20) |
+| Concurrency control | Varies | Built-in cap at 2 (DS's limit) |
 | API format | OpenAI compatible | OpenAI compatible (same) |
 
 ## Limitations
 
-- **No conversation persistence**: each request creates a fresh DS session. Multi-turn conversations are managed by the client (it sends full history each time).
+- **No conversation persistence**: each request creates a fresh DS session. Multi-turn conversations are managed by the client.
 - **No image input**: DS web doesn't support multimodal in this flow.
 - **PoW overhead**: each request solves a PoW challenge (~10-100ms for SHA256, longer for WASM).
-- **Rate limits**: subject to DS web's rate limiting. Concurrent requests should be reasonable.
+- **Max 2 concurrent**: hardcoded to respect DS free web's per-account limit.
 
 ## License
 

@@ -6,7 +6,7 @@
  * Content text comes through other paths. This converter extracts both and
  * emits OpenAI-format chunks: `{ choices: [{ delta: { content } }] }`.
  *
- * @module deepseek-free-api/stream-converter
+ * @module ds-free-proxy/stream-converter
  */
 
 import { randomUUID } from 'node:crypto'

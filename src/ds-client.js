@@ -5,7 +5,7 @@
  * a PoW challenge solved first. Sessions are created fresh per request (no
  * conversation persistence — the caller manages history).
  *
- * @module deepseek-free-api/ds-client
+ * @module ds-free-proxy/ds-client
  */
 
 import { solvePow } from './pow.js'

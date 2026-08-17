@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 /**
- * deepseek-free-api — OpenAI-compatible DS web API proxy.
+ * ds-free-proxy — OpenAI-compatible DS web API proxy.
  *
  * Credentials are pushed by the DS++ browser extension to POST /credentials.
- * Fallback: ~/.deepseek-free-api/credentials.json
+ * Fallback: ~/.ds-free-proxy/credentials.json
  *
  * Config (environment variables):
  *   PORT               Listen port (default: 3000)
  *   AUTH_TOKEN         Optional: require this bearer token from API clients
  *   PUSH_TOKEN         Optional: require this bearer token for credential pushes
  *
- * @module deepseek-free-api/index
+ * @module ds-free-proxy/index
  */
 
 import { createApiServer } from './src/server.js'
@@ -22,7 +22,7 @@ const pushToken = process.env.PUSH_TOKEN
 const { server } = createApiServer({ port, authToken, pushToken })
 
 server.listen(port, '127.0.0.1', () => {
-  console.error(`deepseek-free-api listening on http://127.0.0.1:${String(port)}`)
+  console.error(`ds-free-proxy listening on http://127.0.0.1:${String(port)}`)
   console.error(`  POST /v1/chat/completions   (OpenAI compatible)`)
   console.error(`  POST /credentials            (DS++ extension push)`)
   console.error(`  GET  /v1/models`)

@@ -6,15 +6,45 @@
  * completion → stream SSE back as OpenAI-format chunks.
  *
  * Credentials arrive via POST /credentials (pushed by the DS++ extension) or
- * from a file fallback (~/.deepseek-free-api/credentials.json).
+ * from a file fallback (~/.ds-free-proxy/credentials.json).
  *
- * @module deepseek-free-api/server
+ * Concurrency is capped at 2 (DS web's per-account limit). Excess requests
+ * queue rather than fire concurrently — this prevents ban-triggering bursts.
+ *
+ * @module ds-free-proxy/server
  */
 
 import { createServer } from 'node:http'
 import { createDsClient } from './ds-client.js'
 import { getCredentials, pushCredentials, invalidateCredentials } from './credential-provider.js'
 import { createStreamConverter } from './stream-converter.js'
+
+/** Max concurrent DS API calls. DS free web limits ~2 per account. */
+const MAX_CONCURRENCY = 2
+let activeRequests = 0
+const queue = []
+
+/**
+ * Acquire a concurrency slot. Returns a promise that resolves when a slot is
+ * free. Must be paired with releaseRequest().
+ * @returns {Promise<void>}
+ */
+function acquireRequest() {
+  if (activeRequests < MAX_CONCURRENCY) {
+    activeRequests++
+    return Promise.resolve()
+  }
+  return new Promise((resolve) => {
+    queue.push(() => { activeRequests++; resolve() })
+  })
+}
+
+/** Release a concurrency slot and wake the next queued request. */
+function releaseRequest() {
+  activeRequests--
+  const next = queue.shift()
+  if (next) next()
+}
 
 /** @param {any} body */
 function buildPrompt(messages) {
@@ -56,10 +86,15 @@ export function createApiServer(options) {
     let credentials = getCredentials()
     if (!credentials) {
       res.writeHead(503, { 'content-type': 'application/json' })
-      res.end(JSON.stringify({ error: { message: 'No DS credentials. Waiting for DS++ extension to push credentials, or configure ~/.deepseek-free-api/credentials.json' } }))
+      res.end(JSON.stringify({ error: { message: 'No DS credentials. Waiting for DS++ extension to push credentials, or configure ~/.ds-free-proxy/credentials.json' } }))
       return
     }
 
+    // Concurrency control: DS free web limits ~2 concurrent per account.
+    // Excess requests queue rather than fire concurrently — this prevents
+    // ban-triggering bursts.
+    await acquireRequest()
+    try {
     const client = createDsClient(credentials)
     let sessionId
     try {
@@ -135,6 +170,9 @@ export function createApiServer(options) {
         }],
         usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
       }))
+    }
+    } finally {
+      releaseRequest()
     }
   }
 
