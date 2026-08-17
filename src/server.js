@@ -48,10 +48,10 @@ export function createApiServer(options) {
       return
     }
 
-    const model = body.model || 'deepseek-chat'
+    const model = body.model || 'deepseek-v4-flash'
     const searchEnabled = model.endsWith('-search')
     const baseModel = searchEnabled ? model.replace(/-search$/, '') : model
-    const thinkingEnabled = baseModel.includes('reasoner')
+    const thinkingEnabled = baseModel.includes('pro') || baseModel.includes('reasoner')
 
     let credentials = getCredentials()
     if (!credentials) {
@@ -166,6 +166,11 @@ export function createApiServer(options) {
     res.end(JSON.stringify({
       object: 'list',
       data: [
+        { id: 'deepseek-v4-flash', object: 'model', owned_by: 'deepseek-web' },
+        { id: 'deepseek-v4-pro', object: 'model', owned_by: 'deepseek-web' },
+        { id: 'deepseek-v4-flash-search', object: 'model', owned_by: 'deepseek-web' },
+        { id: 'deepseek-v4-pro-search', object: 'model', owned_by: 'deepseek-web' },
+        // Legacy aliases for client compatibility
         { id: 'deepseek-chat', object: 'model', owned_by: 'deepseek-web' },
         { id: 'deepseek-reasoner', object: 'model', owned_by: 'deepseek-web' },
         { id: 'deepseek-chat-search', object: 'model', owned_by: 'deepseek-web' },

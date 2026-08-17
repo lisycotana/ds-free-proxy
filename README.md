@@ -38,12 +38,16 @@ Model: deepseek-chat
 
 ### Models
 
-| Model ID | What it does |
-| --- | --- |
-| `deepseek-chat` | Standard chat (V3/V4) |
-| `deepseek-reasoner` | Deep thinking / reasoning chain |
-| `deepseek-chat-search` | Standard chat + web search |
-| `deepseek-reasoner-search` | Deep thinking + web search |
+| Model ID | DS web mode | Actual model |
+| --- | --- | --- |
+| `deepseek-v4-flash` | Instant Mode | V4-Flash (284B/13B) |
+| `deepseek-v4-pro` | Expert Mode | V4-Pro (1.6T/49B, 1M context) |
+| `deepseek-v4-flash-search` | Instant + web search | V4-Flash + search |
+| `deepseek-v4-pro-search` | Expert + web search | V4-Pro + search |
+| `deepseek-chat` | *(legacy alias for v4-flash)* | V4-Flash |
+| `deepseek-reasoner` | *(legacy alias for v4-pro)* | V4-Pro |
+
+DS web is fully free — no membership, no API key required. Both V4-Flash and V4-Pro are available on chat.deepseek.com at no cost.
 
 ## Configuration
 
