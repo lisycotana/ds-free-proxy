@@ -5,12 +5,15 @@
  * is converted to a DS web API call: create session → solve PoW → submit
  * completion → stream SSE back as OpenAI-format chunks.
  *
+ * Credentials arrive via POST /credentials (pushed by the DS++ extension) or
+ * from a file fallback (~/.deepseek-free-api/credentials.json).
+ *
  * @module deepseek-free-api/server
  */
 
 import { createServer } from 'node:http'
 import { createDsClient } from './ds-client.js'
-import { getCredentials, invalidateCredentials } from './credential-provider.js'
+import { getCredentials, pushCredentials, invalidateCredentials } from './credential-provider.js'
 import { createStreamConverter } from './stream-converter.js'
 
 /** @param {any} body */
@@ -29,7 +32,7 @@ function buildPrompt(messages) {
 
 /**
  * Create the HTTP server.
- * @param {{ port: number, mcpConfig: {endpoint?:string,token?:string}, authToken?: string }} options
+ * @param {{ port: number, authToken?: string, pushToken?: string }} options
  * @returns {{ server: import('node:http').Server, stop: () => Promise<void> }}
  */
 export function createApiServer(options) {
@@ -50,10 +53,10 @@ export function createApiServer(options) {
     const baseModel = searchEnabled ? model.replace(/-search$/, '') : model
     const thinkingEnabled = baseModel.includes('reasoner')
 
-    let credentials = await getCredentials(options.mcpConfig)
+    let credentials = getCredentials()
     if (!credentials) {
       res.writeHead(503, { 'content-type': 'application/json' })
-      res.end(JSON.stringify({ error: { message: 'No DS credentials available. Ensure DS++ extension is running or configure ~/.deepseek-free-api/credentials.json' } }))
+      res.end(JSON.stringify({ error: { message: 'No DS credentials. Waiting for DS++ extension to push credentials, or configure ~/.deepseek-free-api/credentials.json' } }))
       return
     }
 
@@ -62,9 +65,9 @@ export function createApiServer(options) {
     try {
       sessionId = await client.createSession()
     } catch (e) {
-      // Credentials might be stale — refresh once
+      // Credentials might be stale — invalidate and retry from file once.
       invalidateCredentials()
-      credentials = await getCredentials(options.mcpConfig, true)
+      credentials = getCredentials()
       if (!credentials) throw e
       const retryClient = createDsClient(credentials)
       sessionId = await retryClient.createSession()
@@ -97,7 +100,7 @@ export function createApiServer(options) {
           for (const c of chunks) res.write(c)
         }
         for (const c of converter.end()) res.write(c)
-      } catch (e) {
+      } catch {
         // stream error — best effort close
       }
       res.end()
@@ -135,6 +138,29 @@ export function createApiServer(options) {
     }
   }
 
+  async function handleCredentialsPush(req, res) {
+    // The DS++ extension pushes credentials here. An optional pushToken
+    // guards the endpoint so only the extension can push.
+    let body
+    try {
+      const chunks = []
+      for await (const c of req) chunks.push(c)
+      body = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+    } catch {
+      res.writeHead(400, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ error: 'Invalid JSON body' }))
+      return
+    }
+    if (!body.cookie || !body.bearer) {
+      res.writeHead(400, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ error: 'Missing cookie or bearer' }))
+      return
+    }
+    pushCredentials(body)
+    res.writeHead(200, { 'content-type': 'application/json' })
+    res.end(JSON.stringify({ ok: true }))
+  }
+
   function handleModels(req, res) {
     res.writeHead(200, { 'content-type': 'application/json' })
     res.end(JSON.stringify({
@@ -159,7 +185,23 @@ export function createApiServer(options) {
       return
     }
 
-    // Auth (optional)
+    const url = new URL(req.url, 'http://localhost')
+
+    // Credential push endpoint — uses pushToken if configured
+    if (req.method === 'POST' && url.pathname === '/credentials') {
+      if (options.pushToken) {
+        const auth = req.headers.authorization
+        if (auth !== `Bearer ${options.pushToken}`) {
+          res.writeHead(401, { 'content-type': 'application/json' })
+          res.end(JSON.stringify({ error: { message: 'Unauthorized' } }))
+          return
+        }
+      }
+      handleCredentialsPush(req, res)
+      return
+    }
+
+    // Client auth (optional)
     if (options.authToken) {
       const auth = req.headers.authorization
       if (auth !== `Bearer ${options.authToken}`) {
@@ -169,7 +211,6 @@ export function createApiServer(options) {
       }
     }
 
-    const url = new URL(req.url, 'http://localhost')
     if (req.method === 'POST' && url.pathname === '/v1/chat/completions') {
       try {
         await handleChat(req, res)
