@@ -139,8 +139,6 @@ export function createApiServer(options) {
   }
 
   async function handleCredentialsPush(req, res) {
-    // The DS++ extension pushes credentials here. An optional pushToken
-    // guards the endpoint so only the extension can push.
     let body
     try {
       const chunks = []
